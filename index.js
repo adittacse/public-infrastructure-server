@@ -2,13 +2,40 @@ const express = require("express");
 const app = express();
 const cors = require("cors");
 const { MongoClient, ServerApiVersion } = require("mongodb");
+const admin = require("firebase-admin");
+const serviceAccount = require("./public-infrastructure-firebase-adminsdk.json");
 const dotenv = require("dotenv");
 dotenv.config();
 const port = process.env.PORT || 3000;
 
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+
 // middleware
 app.use(cors());
 app.use(express.json());
+
+// firebase token verify middleware
+const verifyFirebaseToken = async (req, res, next) => {
+    const authorization = req.headers.authorization;
+    if (!authorization) {
+        return res.status(401).send({ message: "Unauthorized Access" });
+    }
+
+    const token = authorization.split(" ")[1];
+    if (!token) {
+        return res.status(401).send({ message: "Unauthorized Access" });
+    }
+
+    try {
+        const userInfo = await admin.auth().verifyIdToken(token);
+        req.token_email = userInfo.email;
+        next();
+    } catch {
+        return res.status(401).send({ message: "Unauthorized Access" });
+    }
+};
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.gkaujxr.mongodb.net/?appName=Cluster0`;
 
