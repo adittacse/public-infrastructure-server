@@ -56,6 +56,20 @@ async function run() {
         const usersCollection = db.collection("users");
         const issuesCollection = db.collection("issues");
 
+        // user's related api's
+        app.get("/users/:email/role", async (req, res) => {
+            const email = req.params.email;
+            const query = {};
+            if (email) {
+                query.email = email;
+            }
+            const user = await usersCollection.findOne(query);
+            res.send({
+                role: user?.role || "citizen",
+                isPremium: !!user?.isPremium,
+                isBlocked: !!user?.isBlocked
+            });
+        });
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
