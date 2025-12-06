@@ -71,6 +71,18 @@ async function run() {
             });
         });
 
+        // issues related api's
+        app.get("/issues/latest-resolved", async (req, res) => {
+            const query = {
+                status: {
+                    $in: ["resolved", "closed"]
+                }
+            };
+            const cursor = issuesCollection.find(query).sort({ updatedAt: -1 }).limit(6);
+            const result = await cursor.toArray();
+            res.send(result);
+        });
+
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
