@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
 const serviceAccount = require("./public-infrastructure-firebase-adminsdk.json");
 const dotenv = require("dotenv");
@@ -56,6 +56,7 @@ async function run() {
         const usersCollection = db.collection("users");
         const issuesCollection = db.collection("issues");
         const paymentsCollection = db.collection("payments");
+        const timelinesCollection = db.collection("timelines");
 
         // more middleware
         const verifyNotBlocked = async (req, res, next) => {
@@ -67,6 +68,21 @@ async function run() {
             }
             req.currentUser = user;
             next();
+        }
+
+        // helper
+        const logTimeline = async (data) => {
+            const { issueId, status, message, updatedByRole, updatedByEmail } = data;
+            const log = {
+                issueId: new ObjectId(issueId),
+                status,
+                message,
+                updatedByRole,
+                updatedByEmail,
+                createdAt: new Date()
+            };
+            const result = await timelinesCollection.insertOne(log);
+            return result;
         }
 
         // user's related api's
@@ -168,6 +184,57 @@ async function run() {
 
             const cursor = issuesCollection.find(query).sort({ createdAt: -1 });
             const result = await cursor.toArray();
+            res.send(result);
+        });
+
+        app.post("/issues", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
+            const issue = req.body;
+            const email = req.token_email;
+            const query = {};
+            if (email) {
+                query.reporterEmail = email;
+            }
+
+            const user = await usersCollection.findOne({ email });
+            if (!user) {
+                return res.status(400).send({ message: "User not found" });
+            }
+            
+            // free user limit
+            if (!user.isPremium) {
+                const count = await issuesCollection.countDocuments(query);
+                if (count >= 3) {
+                    return res.status(403).send({
+                        message: "Free user issue limit exceeded",
+                        needSubscription: true,
+                    });
+                }
+            }
+
+            issue.reporterEmail = email;
+            issue.reporterName = user.displayName;
+            issue.reporterId = user._id;
+            issue.status = "pending";
+            issue.priority = "normal";
+            issue.isBoosted = false;
+            issue.upvotes = [];
+            issue.upvoteCount = 0;
+            issue.assignedStaffId = null;
+            issue.assignedStaffName = "";
+            issue.assignedStaffEmail = "";
+            issue.createdAt = new Date();
+            issue.updatedAt = new Date();
+
+            const result = await issuesCollection.insertOne(issue);
+
+            await logTimeline({
+                issueId: result.insertedId,
+                status: "pending",
+                message: "Issue reported by citizen",
+                updatedByRole: "citizen",
+                updatedByEmail: email
+            });
+
             res.send(result);
         });
 
