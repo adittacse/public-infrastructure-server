@@ -256,6 +256,54 @@ async function run() {
             res.send(result);
         });
 
+        app.patch("/citizen/issues/:id", verifyFirebaseToken, verifyNotBlocked, async (req, res)=> {
+            const id = req.params.id;
+            const displayName = req.currentUser.displayName;
+            const email = req.token_email;
+            const updatedIssue = req.body;
+            const query = { _id: new ObjectId(id) };
+            
+            const issue = await issuesCollection.findOne(query);
+            
+            if (!issue) {
+                return res.status(404).send({ message: "Issue not found" });
+            }
+            if (issue.reporterEmail !== email) {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+            if (issue.status !== "pending") {
+                return res.status(400).send({ message: "Only pending issues can be edited" });
+            }
+            
+            const update = {
+                $set: {
+                    title: updatedIssue.title,
+                    description: updatedIssue.description,
+                    category: updatedIssue.category,
+                    location: updatedIssue.location,
+                    updatedAt: new Date()
+                }
+            };
+
+            // if image link found (optional in frontend)
+            if (updatedIssue.image) {
+                update.$set.image = updatedIssue.image;
+            }
+
+            const result = await issuesCollection.updateOne(query, update);
+
+            await logTimeline({
+                issueId: id,
+                status: issue.status,
+                message: "Issue updated by citizen",
+                updatedByName: displayName,
+                updatedByRole: "citizen",
+                updatedByEmail: email,
+            });
+
+            res.send(result);
+        });
+
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
