@@ -72,11 +72,12 @@ async function run() {
 
         // helper
         const logTimeline = async (data) => {
-            const { issueId, status, message, updatedByRole, updatedByEmail } = data;
+            const { issueId, status, message, updatedByName, updatedByRole, updatedByEmail } = data;
             const log = {
                 issueId: new ObjectId(issueId),
                 status,
                 message,
+                updatedByName,
                 updatedByRole,
                 updatedByEmail,
                 createdAt: new Date()
@@ -194,6 +195,7 @@ async function run() {
                 issueId: result.insertedId,
                 status: "pending",
                 message: "Issue reported by citizen",
+                updatedByName: user.displayName,
                 updatedByRole: "citizen",
                 updatedByEmail: email
             });
