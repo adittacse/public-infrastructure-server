@@ -134,57 +134,20 @@ async function run() {
             res.send(result);
         });
 
-        // citizen api's
-        app.get("/citizen/stats", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
-            const email = req.token_email;
-            const query = {};
-            if (email) {
-                query.customerEmail = email;
+        app.get("/issues/:id", async (req, res) => {
+            const id = req.params.id;
+            const issueIdQuery = { _id: new ObjectId(id) };
+            const timelineQuery = { issueId: new ObjectId(id) };
+            
+            const issue = await issuesCollection.findOne(issueIdQuery);
+            if (!issue) {
+                return res.status(404).send({ message: "Issue not found" });
             }
-
-            const pipeline = [
-                {
-                    $match: {
-                        reporterEmail: email
-                    }
-                },
-                {
-                    $group: {
-                        _id: "$status",
-                        count: {
-                            $sum: 1
-                        }
-                    }
-                }
-            ];
-
-            const cursor = issuesCollection.aggregate(pipeline);
-            const statusStats = await cursor.toArray();
-
-            const paymentCursor = paymentsCollection.find(query).sort({ paidAT: -1 });
-            const payments = await paymentCursor.toArray();
-            res.send({
-                statusStats,
-                totalPayments: paymentCursor.length,
-                payments
-            });
-        });
-
-        app.get("/citizen/my-issues", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
-            const email = req.token_email;
-            const { status, category } = req.query;
-            const query = { reporterEmail: email };
-
-            if (status) {
-                query.status = status;
-            }
-            if (category) {
-                query.category = category;
-            }
-
-            const cursor = issuesCollection.find(query).sort({ createdAt: -1 });
-            const result = await cursor.toArray();
-            res.send(result);
+            
+            const cursor = timelinesCollection.find(timelineQuery).sort({ createdAt: -1 });
+            const timelines = await cursor.toArray();
+            
+            return res.send({ issue, timelines });
         });
 
         app.post("/issues", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
@@ -235,6 +198,59 @@ async function run() {
                 updatedByEmail: email
             });
 
+            res.send(result);
+        });
+
+        // citizen api's
+        app.get("/citizen/stats", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
+            const email = req.token_email;
+            const query = {};
+            if (email) {
+                query.customerEmail = email;
+            }
+
+            const pipeline = [
+                {
+                    $match: {
+                        reporterEmail: email
+                    }
+                },
+                {
+                    $group: {
+                        _id: "$status",
+                        count: {
+                            $sum: 1
+                        }
+                    }
+                }
+            ];
+
+            const cursor = issuesCollection.aggregate(pipeline);
+            const statusStats = await cursor.toArray();
+
+            const paymentCursor = paymentsCollection.find(query).sort({ paidAT: -1 });
+            const payments = await paymentCursor.toArray();
+            res.send({
+                statusStats,
+                totalPayments: paymentCursor.length,
+                payments
+            });
+        });
+
+        app.get("/citizen/my-issues", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
+            const email = req.token_email;
+            const { status, category } = req.query;
+            const query = { reporterEmail: email };
+
+            if (status) {
+                query.status = status;
+            }
+            if (category) {
+                query.category = category;
+            }
+
+            const cursor = issuesCollection.find(query).sort({ createdAt: -1 });
+            const result = await cursor.toArray();
             res.send(result);
         });
 
