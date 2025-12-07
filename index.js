@@ -71,6 +71,28 @@ async function run() {
             });
         });
 
+        app.post("/users", async (req, res) => {
+            const user = req.body;
+            const email = user.email;
+            const query = {};
+            if (email) {
+                query.email = email;
+            }
+
+            const userExists = await usersCollection.findOne(query);
+            if (userExists) {
+                return res.send({ message: "user exists" });
+            }
+
+            user.role = user.role || "citizen";
+            user.isPremium = false;
+            user.isBlocked = false;
+            user.createdAt = new Date();
+
+            const result = await usersCollection.insertOne(user);
+            return res.send(result);
+        });
+
         // issues related api's
         app.get("/issues/latest-resolved", async (req, res) => {
             const query = {
