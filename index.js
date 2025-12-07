@@ -55,6 +55,7 @@ async function run() {
 
         const usersCollection = db.collection("users");
         const issuesCollection = db.collection("issues");
+        const paymentsCollection = db.collection("payments");
 
         // more middleware
         const verifyNotBlocked = async (req, res, next) => {
@@ -118,11 +119,46 @@ async function run() {
         });
 
         // citizen api's
+        app.get("/citizen/stats", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
+            const email = req.token_email;
+            const query = {};
+            if (email) {
+                query.customerEmail = email;
+            }
+
+            const pipeline = [
+                {
+                    $match: {
+                        reporterEmail: email
+                    }
+                },
+                {
+                    $group: {
+                        _id: "$status",
+                        count: {
+                            $sum: 1
+                        }
+                    }
+                }
+            ];
+
+            const cursor = issuesCollection.aggregate(pipeline);
+            const statusStats = await cursor.toArray();
+
+            const paymentCursor = paymentsCollection.find(query).sort({ paidAT: -1 });
+            const payments = await paymentCursor.toArray();
+            res.send({
+                statusStats,
+                totalPayments: paymentCursor.length,
+                payments
+            });
+        });
+
         app.get("/citizen/my-issues", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
             const email = req.token_email;
             const { status, category } = req.query;
             const query = { reporterEmail: email };
-            
+
             if (status) {
                 query.status = status;
             }
