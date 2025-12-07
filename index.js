@@ -74,7 +74,7 @@ async function run() {
         const logTimeline = async (data) => {
             const { issueId, status, message, updatedByName, updatedByRole, updatedByEmail } = data;
             const log = {
-                issueId: new ObjectId(issueId),
+                issueId,
                 status,
                 message,
                 updatedByName,
@@ -138,7 +138,7 @@ async function run() {
         app.get("/issues/:id", async (req, res) => {
             const id = req.params.id;
             const issueIdQuery = { _id: new ObjectId(id) };
-            const timelineQuery = { issueId: new ObjectId(id) };
+            const timelineQuery = { issueId: id };
             
             const issue = await issuesCollection.findOne(issueIdQuery);
             if (!issue) {
@@ -301,6 +301,19 @@ async function run() {
                 updatedByEmail: email,
             });
 
+            res.send(result);
+        });
+
+        app.delete("/citizen/issues/:id", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
+            const id = req.params.id;
+            const email = req.token_email;
+            const query = { _id: new ObjectId(id) };
+            const issue = await issuesCollection.findOne(query);
+            if (issue.reporterEmail !== email) {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+
+            const result = await issuesCollection.deleteOne(query);
             res.send(result);
         });
 
