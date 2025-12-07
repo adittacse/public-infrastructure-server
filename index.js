@@ -308,10 +308,15 @@ async function run() {
             const id = req.params.id;
             const email = req.token_email;
             const query = { _id: new ObjectId(id) };
+
             const issue = await issuesCollection.findOne(query);
+
             if (issue.reporterEmail !== email) {
                 return res.status(403).send({ message: "Forbidden Access" });
             }
+
+            const timelineQuery = { issueId: id };
+            const timelineResult = await timelinesCollection.deleteMany(timelineQuery);
 
             const result = await issuesCollection.deleteOne(query);
             res.send(result);
