@@ -56,6 +56,18 @@ async function run() {
         const usersCollection = db.collection("users");
         const issuesCollection = db.collection("issues");
 
+        // more middleware
+        const verifyNotBlocked = async (req, res, next) => {
+            const email = req.token_email;
+            const query = { email: email };
+            const user = await usersCollection.findOne(query);
+            if (user && user.isBlocked) {
+                return res.status(403).send({ message: "You are blocked by admin" });
+            }
+            req.currentUser = user;
+            next();
+        }
+
         // user's related api's
         app.get("/users/:email/role", async (req, res) => {
             const email = req.params.email;
@@ -101,6 +113,24 @@ async function run() {
                 }
             };
             const cursor = issuesCollection.find(query).sort({ updatedAt: -1 }).limit(6);
+            const result = await cursor.toArray();
+            res.send(result);
+        });
+
+        // citizen api's
+        app.get("/citizen/my-issues", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
+            const email = req.token_email;
+            const { status, category } = req.query;
+            const query = { reporterEmail: email };
+            
+            if (status) {
+                query.status = status;
+            }
+            if (category) {
+                query.category = category;
+            }
+
+            const cursor = issuesCollection.find(query).sort({ createdAt: -1 });
             const result = await cursor.toArray();
             res.send(result);
         });
