@@ -58,6 +58,19 @@ async function run() {
         const paymentsCollection = db.collection("payments");
         const timelinesCollection = db.collection("timelines");
 
+        // role based middleware
+        const verifyAdmin = async (req, res, next) => {
+            const email = req.token_email;
+            const query = { email: email };
+            const user = await usersCollection.findOne(query);
+
+            if (!user || user.role !== "admin") {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+            req.currentUser = user;
+            next();
+        };
+
         // more middleware
         const verifyNotBlocked = async (req, res, next) => {
             const email = req.token_email;
@@ -203,7 +216,7 @@ async function run() {
             res.send(result);
         });
 
-        // citizen api's
+        // citizen related api's
         app.get("/citizen/stats", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
             const email = req.token_email;
             const query = {};
@@ -239,19 +252,57 @@ async function run() {
             });
         });
 
+        app.get("/citizen/my-issue-locations", verifyFirebaseToken, async (req, res) => {
+            const email = req.token_email;
+
+            const pipeline = [
+                { 
+                    $match: { 
+                        reporterEmail: email 
+                    } 
+                },
+                {
+                    $group: {
+                        _id: "$location",
+                    }
+                },
+                {
+                    $project: {
+                        _id: 0,
+                        location: "$_id",
+                    }
+                },
+                {
+                    $sort: {
+                        location: 1
+                    }
+                }
+            ];
+
+            const cursor = issuesCollection.aggregate(pipeline);
+            const locations = await cursor.toArray();
+            
+            const result = locations.map(item => item.location).filter(Boolean);
+            res.send(result);
+        });
+
         app.get("/citizen/my-issues", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
             const email = req.token_email;
-            const { status, category } = req.query;
+            const { status, location } = req.query;
             const query = { reporterEmail: email };
 
             if (status) {
                 query.status = status;
             }
-            if (category) {
-                query.category = category;
+            if (location) {
+                query.location = location;
             }
 
-            const cursor = issuesCollection.find(query).sort({ createdAt: -1 });
+            const options = {
+                sort: { createdAt: -1 }
+            };
+
+            const cursor = issuesCollection.find(query, options);
             const result = await cursor.toArray();
             res.send(result);
         });
@@ -320,6 +371,113 @@ async function run() {
 
             const result = await issuesCollection.deleteOne(query);
             res.send(result);
+        });
+
+        // admin related api's
+        app.get("/admin/overview", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            // issue stats
+            const totalIssues = await issuesCollection.countDocuments({});
+
+            const statusPipeline = [
+                {
+                    $group: {
+                        _id: "$status",
+                        count: { 
+                            $sum: 1 
+                        }
+                    }
+                }
+            ];
+            const statusResult = await issuesCollection.aggregate(statusPipeline).toArray();
+
+            const stats = {
+                totalIssues,
+                pending: 0,
+                inProgress: 0,
+                working: 0,
+                resolved: 0,
+                closed: 0,
+                rejected: 0,
+            };
+
+            statusResult.forEach((item) => {
+                const status = item._id;
+                if (status === "pending") {
+                    stats.pending = item.count;
+                }
+                if (status === "in_progress") {
+                    stats.inProgress = item.count;
+                }
+                if (status === "working") {
+                    stats.working = item.count;
+                }
+                if (status === "resolved") {
+                    stats.resolved = item.count;
+                }
+                if (status === "closed") {
+                    stats.closed = item.count;
+                }
+                if (status === "rejected") {
+                    stats.rejected = item.count;
+                }
+            });
+
+            // payment stats
+            const paymentPipeline = [
+                {
+                    $group: {
+                        _id: null,
+                        totalAmount: { $sum: "$amount" },
+                        totalCount: { $sum: 1 },
+                    }
+                }
+            ];
+            const paymentCursor = paymentsCollection.aggregate(paymentPipeline);
+            const paymentAgg = await paymentCursor.toArray();
+
+            stats.totalPayments = paymentAgg[0]?.totalAmount || 0;
+            stats.totalPaymentCount = paymentAgg[0]?.totalCount || 0;
+
+            // latest issues (first boosted, then date)
+            const latestIssuesCursor = issuesCollection
+                .find({})
+                .sort({ priority: -1, createdAt: -1 })
+                .limit(5)
+                .project({
+                    title: 1,
+                    category: 1,
+                    status: 1,
+                    priority: 1
+                });
+
+            const latestIssues = await latestIssuesCursor.toArray();
+
+            // latest payments
+            const latestPaymentsCursor = paymentsCollection.find({}).sort({ paidAt: -1 }).limit(5);
+            const latestPayments = await latestPaymentsCursor.toArray();
+
+            // latest users (citizens)
+            const latestUsersCursor = usersCollection
+                .find({ role: "citizen" })
+                .sort({ createdAt: -1 })
+                .limit(5)
+                .project({
+                    displayName: 1,
+                    email: 1,
+                    photoURL: 1,
+                    isPremium: 1,
+                    isBlocked: 1,
+                    role: 1,
+                });
+
+            const latestUsers = await latestUsersCursor.toArray();
+
+            return res.send({
+                stats,
+                latestIssues,
+                latestPayments,
+                latestUsers,
+            });
         });
 
         // Send a ping to confirm a successful connection
