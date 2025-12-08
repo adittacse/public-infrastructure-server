@@ -566,20 +566,38 @@ async function run() {
             const result = await usersCollection.updateOne(query, update, options);
             res.send(result);
         });
+        
+        app.patch("/admin/users/:id/role", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            const { role } = req.body;
+
+            if (!role) {
+                return res.status(400).send({ message: "Role is required" });
+            }
+            
+            const update = {
+                $set: {
+                    role: role,
+                }
+            };
+            const options = {};
+            const result = await usersCollection.updateOne(query, update, options);
+            res.send(result);
+        });
 
         app.patch("/admin/citizens/:id/block", verifyFirebaseToken, verifyAdmin, async (req, res) => {
-                const id = req.params.id;
-                const { isBlocked } = req.body;
-                const query = { _id: new ObjectId(id) };
-                const update = {
-                    $set: {
-                        isBlocked: !!isBlocked,
-                    },
-                };
-                const result = await usersCollection.updateOne(query, update);
-                res.send(result);
-            }
-        );
+            const id = req.params.id;
+            const { isBlocked } = req.body;
+            const query = { _id: new ObjectId(id) };
+            const update = {
+                $set: {
+                    isBlocked: !!isBlocked,
+                },
+            };
+            const result = await usersCollection.updateOne(query, update);
+            res.send(result);
+        });
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
