@@ -533,6 +533,19 @@ async function run() {
             const result = await cursor.toArray();
             res.send(result);
         });
+        
+        app.get("/admin/profile", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const tokenEmail = req.token_email;
+            const email = req.query.email;
+            
+            if (email !== tokenEmail) {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+
+            const query = { email: email };
+            const user = await usersCollection.findOne(query);
+            res.send(user);
+        });
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
