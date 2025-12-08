@@ -499,6 +499,33 @@ async function run() {
             res.send(result);
         });
 
+        // admin - get all citizen users
+        app.get("/admin/citizens", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const search = req.query.search;
+            const query = {
+                $or: [
+                    { role: { $exists: false } },
+                    { role: "citizen" },
+                    { role: "user" }
+                ]
+            };
+
+            if (search) {
+                query.$and = [
+                    {
+                        $or: [
+                            { displayName: { $regex: search, $options: "i" } },
+                            { email: { $regex: search, $options: "i" } }
+                        ]
+                    }
+                ];
+            }
+
+            const cursor = usersCollection.find(query).sort({ createdAt: -1 });
+            const result = await cursor.toArray();
+            res.send(result);
+        });
+
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
