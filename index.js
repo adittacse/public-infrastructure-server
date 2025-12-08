@@ -498,9 +498,9 @@ async function run() {
             const result = await cursor.toArray();
             res.send(result);
         });
-        
+
         app.get("/admin/citizens", verifyFirebaseToken, verifyAdmin, async (req, res) => {
-            const search = req.query.search;
+            const { searchText } = req.params;
             const query = {
                 $or: [
                     { role: { $exists: false } },
@@ -509,12 +509,12 @@ async function run() {
                 ]
             };
 
-            if (search) {
+            if (searchText) {
                 query.$and = [
                     {
                         $or: [
-                            { displayName: { $regex: search, $options: "i" } },
-                            { email: { $regex: search, $options: "i" } }
+                            { displayName: { $regex: searchText, $options: "i" } },
+                            { email: { $regex: searchText, $options: "i" } }
                         ]
                     }
                 ];
@@ -547,7 +547,7 @@ async function run() {
             res.send(user);
         });
 
-        app.patch("/admin/profile/:id", async (req, res) => {
+        app.patch("/admin/profile/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const userUpdatedData = req.body;
             const query = { _id: new ObjectId(id) };
