@@ -547,6 +547,25 @@ async function run() {
             res.send(user);
         });
 
+        app.patch("/admin/profile/:id", async (req, res) => {
+            const id = req.params.id;
+            const userUpdatedData = req.body;
+            const query = { _id: new ObjectId(id) };
+            const update = {
+                $set: {
+                    displayName: userUpdatedData.displayName,
+                }
+            };
+
+            if (userUpdatedData.photoURL) {
+                update.$set.photoURL = userUpdatedData.photoURL;
+            }
+
+            const options = {};
+            const result = await usersCollection.updateOne(query, update, options);
+            res.send(result);
+        });
+
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
