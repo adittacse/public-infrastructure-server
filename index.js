@@ -498,8 +498,7 @@ async function run() {
             const result = await cursor.toArray();
             res.send(result);
         });
-
-        // admin - get all citizen users
+        
         app.get("/admin/citizens", verifyFirebaseToken, verifyAdmin, async (req, res) => {
             const search = req.query.search;
             const query = {
@@ -521,7 +520,16 @@ async function run() {
                 ];
             }
 
-            const cursor = usersCollection.find(query).sort({ createdAt: -1 });
+            const options = { createdAt: -1 };
+            const cursor = usersCollection.find(query, options);
+            const result = await cursor.toArray();
+            res.send(result);
+        });
+
+        app.get("/admin/staff", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const query = { role: "staff" };
+            const options = { createdAt: -1 };
+            const cursor = usersCollection.find(query, options);
             const result = await cursor.toArray();
             res.send(result);
         });
