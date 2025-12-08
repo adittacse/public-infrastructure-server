@@ -566,6 +566,20 @@ async function run() {
             res.send(result);
         });
 
+        app.patch("/admin/citizens/:id/block", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+                const id = req.params.id;
+                const { isBlocked } = req.body;
+                const query = { _id: new ObjectId(id) };
+                const update = {
+                    $set: {
+                        isBlocked: !!isBlocked,
+                    },
+                };
+                const result = await usersCollection.updateOne(query, update);
+                res.send(result);
+            }
+        );
+
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
