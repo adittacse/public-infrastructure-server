@@ -37,6 +37,21 @@ const verifyFirebaseToken = async (req, res, next) => {
     }
 };
 
+// 🔹 Firebase Admin helper: delete user by email
+const deleteFirebaseUserByEmail = async (email) => {
+    try {
+        const userRecord = await admin.auth().getUserByEmail(email);
+        await admin.auth().deleteUser(userRecord.uid);
+        return { success: true };
+    } catch (error) {
+        if (error.code === "auth/user-not-found") {
+            // absent in firebase, but may stay in database
+            return { success: false, reason: "not-found" };
+        }
+        throw error;
+    }
+};
+
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.gkaujxr.mongodb.net/?appName=Cluster0`;
 
 const client = new MongoClient(uri, {
@@ -598,6 +613,26 @@ async function run() {
             const result = await usersCollection.updateOne(query, update);
             res.send(result);
         });
+
+        app.delete("/admin/users/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+                const id = req.params.id;
+                const query = { _id: new ObjectId(id) };
+                const user = await usersCollection.findOne(query);
+                
+                if (req.token_email === user.email) {
+                    return res.status(400).send({ message: "You can't delete yourself" });
+                }
+                
+                if (user.email) {
+                    await deleteFirebaseUserByEmail(user.email);
+                    await timelinesCollection.deleteMany({ updatedByEmail: user.email });
+                    await issuesCollection.deleteMany({ reporterEmail: user.email });
+                }
+                
+                const result = await usersCollection.deleteOne(query);
+                return res.send(result);
+            },
+        );
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
