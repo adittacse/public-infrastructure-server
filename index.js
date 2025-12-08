@@ -499,15 +499,16 @@ async function run() {
             res.send(result);
         });
 
-        app.get("/admin/citizens", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+        app.get("/admin/users", verifyFirebaseToken, verifyAdmin, async (req, res) => {
             const { searchText } = req.params;
-            const query = {
-                $or: [
-                    { role: { $exists: false } },
-                    { role: "citizen" },
-                    { role: "user" }
-                ]
-            };
+            const query = {};
+            // const query = {
+            //     $or: [
+            //         { role: { $exists: false } },
+            //         { role: "citizen" },
+            //         { role: "staff" }
+            //     ]
+            // };
 
             if (searchText) {
                 query.$and = [
