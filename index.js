@@ -480,6 +480,25 @@ async function run() {
             });
         });
 
+        app.get("/admin/issues", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const { status, priority, category } = req.query;
+            const query = {};
+
+            if (status) {
+                query.status = status;
+            }
+            if (priority) {
+                query.priority = priority;
+            }
+            if (category) {
+                query.category = category;
+            }
+
+            const cursor = issuesCollection.find(query).sort({ priority: -1, createdAt: -1 });
+            const result = await cursor.toArray();
+            res.send(result);
+        });
+
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
