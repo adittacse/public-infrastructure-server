@@ -529,7 +529,35 @@ async function run() {
         });
 
         app.get("/admin/categories", verifyFirebaseToken, async (req, res) => {
-            const cursor = categoriesCollection.find().sort({ categoryName: "ascending" });
+            const pipeline = [
+                {
+                    $lookup: {
+                        from: "issues",
+                        localField: "categoryName",
+                        foreignField: "category",
+                        as: "issues"
+                    }
+                },
+                {
+                    $addFields: {
+                        issuesCount: {
+                            $size: "$issues"
+                        }
+                    }
+                },
+                {
+                    $project: {
+                        issues: 0
+                    }
+                },
+                {
+                    $sort: {
+                        categoryName: 1
+                    }
+                }
+            ];
+
+            const cursor = categoriesCollection.aggregate(pipeline);
             const result = await cursor.toArray();
             res.send(result);
         });
