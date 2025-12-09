@@ -113,14 +113,14 @@ async function run() {
 
         // helper
         const logTimeline = async (data) => {
-            const { issueId, status, message, updatedByName, updatedByRole, updatedByEmail } = data;
+            const { issueId, status, message, updatedByName, updatedByEmail, updatedByRole } = data;
             const log = {
                 issueId,
                 status,
                 message,
                 updatedByName,
-                updatedByRole,
                 updatedByEmail,
+                updatedByRole,
                 createdAt: new Date()
             };
             const result = await timelinesCollection.insertOne(log);
@@ -237,8 +237,8 @@ async function run() {
                 status: "pending",
                 message: "Issue reported by citizen",
                 updatedByName: user.displayName,
-                updatedByRole: "citizen",
-                updatedByEmail: email
+                updatedByEmail: email,
+                updatedByRole: "citizen"
             });
 
             res.send(result);
@@ -376,8 +376,8 @@ async function run() {
                 status: issue.status,
                 message: "Issue updated by citizen",
                 updatedByName: displayName,
-                updatedByRole: "citizen",
                 updatedByEmail: email,
+                updatedByRole: "citizen"
             });
 
             res.send(result);
@@ -719,8 +719,8 @@ async function run() {
                 status: issue.status,
                 message: `Issue assigned to staff: ${staff.displayName}`,
                 updatedByName: adminName,
-                updatedByRole: "admin",
                 updatedByEmail: adminEmail,
+                updatedByRole: "admin",
             });
 
             return res.send({
@@ -728,6 +728,36 @@ async function run() {
                 modifiedCount: result.modifiedCount,
                 matchedCount: result.matchedCount,
             });   
+        });
+
+        app.patch("/admin/issues/:id/reject", verifyFirebaseToken, verifyAdmin,async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            const issue = await issuesCollection.findOne(query);
+
+            if (issue.status !== "pending") {
+                return res.status(400).send({ message: "Only pending issues can be rejected" });
+            }
+
+            const update = {
+                $set: {
+                    status: "rejected",
+                    updatedAt: new Date(),
+                }
+            };
+
+            const result = await issuesCollection.updateOne(query, update);
+
+            await logTimeline({
+                issueId: id,
+                status: "rejected",
+                message: "Issue rejected by admin",
+                updatedByName: req.currentUser.displayName,
+                updatedByEmail: req.token_email,
+                updatedByRole: req.currentUser.role
+            });
+
+            res.send(result);
         });
 
         app.patch("/admin/categories/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
