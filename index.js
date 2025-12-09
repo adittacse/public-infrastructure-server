@@ -699,9 +699,29 @@ async function run() {
                 success: result.modifiedCount > 0,
                 modifiedCount: result.modifiedCount,
                 matchedCount: result.matchedCount,
-            });
-        }
-    );
+            });   
+        });
+
+        app.patch("/admin/categories/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const { categoryName } = req.body;
+
+            if (!categoryName) {
+                return res.status(400).send({ message: "Category name is required" });
+            }
+
+            const query = { _id: new ObjectId(id) };
+
+            const update = {
+                $set: {
+                    categoryName,
+                    updatedAt: new Date()
+                }
+            };
+
+            const result = await categoriesCollection.updateOne(query, update);
+            res.send(result);
+        });
 
         app.delete("/admin/users/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
                 const id = req.params.id;
