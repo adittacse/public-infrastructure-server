@@ -509,7 +509,7 @@ async function run() {
         });
 
         app.get("/admin/issues", verifyFirebaseToken, verifyAdmin, async (req, res) => {
-            const { status, priority, category } = req.query;
+            const { status, priority, category, search } = req.query;
             const query = {};
 
             if (status) {
@@ -521,8 +521,18 @@ async function run() {
             if (category) {
                 query.category = category;
             }
+            if (search) {
+                query.$or = [
+                    { title: { $regex: search, $options: "i" } },
+                    { location: { $regex: search, $options: "i" } }
+                ];
+            }
 
-            const options = { priority: -1, createdAt: -1 };
+            const options = { 
+                sort: {
+                    title: "ascending", priority: -1, createdAt: -1
+                }
+            };
             const cursor = issuesCollection.find(query, options);
             const result = await cursor.toArray();
             res.send(result);
