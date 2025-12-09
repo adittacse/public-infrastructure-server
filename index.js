@@ -434,6 +434,31 @@ async function run() {
             res.send(result);
         });
 
+        // staff related api's
+        app.get("/staff/issues", verifyFirebaseToken, verifyStaff, async (req, res) => {
+            const email = req.token_email;
+            const { status, priority } = req.query;
+            const query = { assignedStaffEmail: email };
+
+            if (status) {
+                query.status = status;
+            }
+            if (priority) {
+                query.priority = priority;
+            }
+            
+            const options = {
+                sort: {
+                    isBoosted: -1,
+                    createdAt: 1
+                }
+            };
+
+            const cursor = issuesCollection.find(query, options);
+            const result = await cursor.toArray();
+            res.send(result);
+        });
+
         // admin related api's
         app.get("/admin/overview", verifyFirebaseToken, verifyAdmin, async (req, res) => {
             // issue stats
