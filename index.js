@@ -743,6 +743,13 @@ async function run() {
             },
         );
 
+        app.delete("/admin/categories/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            const result = await categoriesCollection.deleteOne(query);
+            res.send(result);
+        });
+
         // staff related api's
         app.get("/staff/overview", verifyFirebaseToken, verifyStaff, async (req, res) => {
             const email = req.token_email;
