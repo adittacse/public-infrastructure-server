@@ -232,7 +232,7 @@ async function run() {
             const result = await issuesCollection.insertOne(issue);
 
             await logTimeline({
-                issueId: result.insertedId,
+                issueId: result.insertedId.toHexString(),
                 status: "pending",
                 message: "Issue reported by citizen",
                 updatedByName: user.displayName,
