@@ -529,8 +529,7 @@ async function run() {
         });
 
         app.get("/admin/categories", verifyFirebaseToken, async (req, res) => {
-            const options = { name: 1 };
-            const cursor = categoriesCollection.find(options);
+            const cursor = categoriesCollection.find().sort({ categoryName: "ascending" });
             const result = await cursor.toArray();
             res.send(result);
         });
@@ -582,6 +581,26 @@ async function run() {
             const query = { email: email };
             const user = await usersCollection.findOne(query);
             res.send(user);
+        });
+
+        app.post("/admin/categories", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const categoryName = req.body.categoryName;
+            const query = {
+                categoryName: { $regex: categoryName, $options: "i" }
+            };
+
+            const categoryExists = await categoriesCollection.findOne(query);
+            if (categoryExists) {
+                return res.status(400).send({ message: "Category already exists" });
+            }
+
+            const category = {
+                categoryName,
+                createdAt: new Date()
+            };
+
+            const result = await categoriesCollection.insertOne(category);
+            res.send(result);
         });
 
         app.patch("/admin/profile/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
