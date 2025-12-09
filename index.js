@@ -215,15 +215,15 @@ async function run() {
                 }
             }
 
-            issue.reporterEmail = email;
+            issue.reporterEmail = user.email;
             issue.reporterName = user.displayName;
-            issue.reporterId = user._id;
+            issue.reporterId = user._id.toHexString();
             issue.status = "pending";
             issue.priority = "normal";
             issue.isBoosted = false;
             issue.upvotes = [];
             issue.upvoteCount = 0;
-            issue.assignedStaffId = null;
+            issue.assignedStaffId = "";
             issue.assignedStaffName = "";
             issue.assignedStaffEmail = "";
             issue.createdAt = new Date();
