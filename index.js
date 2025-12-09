@@ -69,6 +69,7 @@ async function run() {
         const db = client.db("publicInfrastructureDB");
 
         const usersCollection = db.collection("users");
+        const categoriesCollection = db.collection("categories");
         const issuesCollection = db.collection("issues");
         const paymentsCollection = db.collection("payments");
         const timelinesCollection = db.collection("timelines");
@@ -523,6 +524,13 @@ async function run() {
 
             const options = { priority: -1, createdAt: -1 };
             const cursor = issuesCollection.find(query, options);
+            const result = await cursor.toArray();
+            res.send(result);
+        });
+
+        app.get("/admin/categories", verifyFirebaseToken, async (req, res) => {
+            const options = { name: 1 };
+            const cursor = categoriesCollection.find(options);
             const result = await cursor.toArray();
             res.send(result);
         });
