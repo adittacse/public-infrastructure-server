@@ -86,6 +86,18 @@ async function run() {
             next();
         };
 
+        const verifyStaff = async (req, res, next) => {
+            const email = req.token_email;
+            const query = { email: email };
+            const user = await usersCollection.findOne(query);
+
+            if (!user || user.role !== "staff") {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+            req.currentUser = user;
+            next();
+        };
+
         // more middleware
         const verifyNotBlocked = async (req, res, next) => {
             const email = req.token_email;
@@ -509,7 +521,8 @@ async function run() {
                 query.category = category;
             }
 
-            const cursor = issuesCollection.find(query).sort({ priority: -1, createdAt: -1 });
+            const options = { priority: -1, createdAt: -1 };
+            const cursor = issuesCollection.find(query, options);
             const result = await cursor.toArray();
             res.send(result);
         });
@@ -614,6 +627,55 @@ async function run() {
             res.send(result);
         });
 
+        app.patch("/admin/issues/:id/assign-staff", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const { staffId } = req.body;
+            const issueQuery = { _id: new ObjectId(id) };
+            const issue = await issuesCollection.findOne(issueQuery);
+            
+            // don't assign staff if already assigned
+            if (issue.assignedStaffId) {
+                return res.status(400).send({ message: "Staff already assigned for this issue" });
+            }
+
+            // get search staff user
+            const staffQuery = { _id: new ObjectId(staffId) };
+            const staff = await usersCollection.findOne(staffQuery);
+
+            const adminName = req.currentUser?.displayName;
+            const adminEmail = req.token_email;
+
+            const updateDoc = {
+                $set: {
+                    assignedStaffId: staffId,
+                    assignedStaffName: staff.displayName,
+                    assignedStaffEmail: staff.email,
+                    assignedStaffPhoto: staff.photoURL,
+                    updatedAt: new Date(),
+                    // status is always pending as per requirement
+                },
+            };
+
+            const result = await issuesCollection.updateOne(issueQuery, updateDoc);
+
+            // timeline log create
+            await logTimeline({
+                issueId: id,
+                status: issue.status,
+                message: `Issue assigned to staff: ${staff.displayName}`,
+                updatedByName: adminName,
+                updatedByRole: "admin",
+                updatedByEmail: adminEmail,
+            });
+
+            return res.send({
+                success: result.modifiedCount > 0,
+                modifiedCount: result.modifiedCount,
+                matchedCount: result.matchedCount,
+            });
+        }
+    );
+
         app.delete("/admin/users/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
                 const id = req.params.id;
                 const query = { _id: new ObjectId(id) };
@@ -633,6 +695,63 @@ async function run() {
                 return res.send(result);
             },
         );
+
+        // staff related api's
+        app.get("/staff/overview", verifyFirebaseToken, verifyStaff, async (req, res) => {
+            const email = req.token_email;
+
+            const baseQuery = {
+                assignedStaffEmail: email
+            };
+
+            // মোট assigned issue
+            const assignedCount = await issuesCollection.countDocuments(baseQuery);
+
+            // status অনুযায়ী count
+            const statuses = ["pending", "in_progress", "working", "resolved", "closed"];
+            const countsByStatus = await issuesCollection.aggregate([
+                { $match: baseQuery },
+                {
+                    $group: {
+                        _id: "$status",
+                        count: { $sum: 1 }
+                    }
+                }
+            ]).toArray();
+
+            const countMap = {};
+            statuses.forEach((st) => {
+                countMap[st] = 0;
+            });
+            countsByStatus.forEach((item) => {
+                countMap[item._id] = item.count;
+            });
+
+            // boosted issues (যেগুলোতে isBoosted true)
+            const boostedIssuesCount = await issuesCollection.countDocuments({
+                assignedStaffEmail: email,
+                isBoosted: true
+            });
+
+            // todayTasksCount — সহজভাবে ধরলাম pending / in_progress / working
+            const todayTasksCount = await issuesCollection.countDocuments({
+                assignedStaffEmail: email,
+                status: { $in: ["pending", "in_progress", "working"] }
+            });
+
+            const totalIssues = assignedCount;
+
+            res.send({
+                assignedCount,
+                inProgressCount: countMap["in_progress"] || 0,
+                workingCount: countMap["working"] || 0,
+                resolvedCount: countMap["resolved"] || 0,
+                closedCount: countMap["closed"] || 0,
+                todayTasksCount,
+                boostedIssuesCount,
+                totalIssues
+            });
+        });
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
