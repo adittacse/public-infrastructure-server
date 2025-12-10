@@ -99,6 +99,18 @@ async function run() {
             next();
         };
 
+        const verifyCitizen = async (req, res, next) => {
+            const email = req.token_email;
+            const query = { email: email };
+            const user = await usersCollection.findOne(query);
+
+            if (!user || user.role !== "citizen") {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+            req.currentUser = user;
+            next();
+        };
+
         // more middleware
         const verifyNotBlocked = async (req, res, next) => {
             const email = req.token_email;
@@ -140,7 +152,7 @@ async function run() {
             const user = await usersCollection.findOne(query);
             res.send(user);
         });
-        
+
         app.get("/users/:email/role", async (req, res) => {
             const email = req.params.email;
             const query = {};
@@ -307,9 +319,8 @@ async function run() {
             return res.send({ issue, timelines });
         });
 
-        app.post("/issues", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
-            const issue = req.body;
-            const email = req.token_email;
+        app.get("/issues/:email/limit", verifyFirebaseToken, verifyCitizen, verifyNotBlocked, async (req, res) => {
+            const email = req.params.email;
             const query = {};
             if (email) {
                 query.reporterEmail = email;
@@ -319,17 +330,32 @@ async function run() {
             if (!user) {
                 return res.status(400).send({ message: "User not found" });
             }
-            
+
             // free user limit
             if (!user.isPremium) {
                 const count = await issuesCollection.countDocuments(query);
+
                 if (count >= 3) {
                     return res.status(429).send({
                         message: "Free user issue limit exceeded. Buy premium to post more issues",
                         needSubscription: true,
+                        allowPosting: false
                     });
                 }
             }
+
+            return res.status(200).send({ allowPosting: true });
+        });
+
+        app.post("/issues", verifyFirebaseToken, verifyCitizen, verifyNotBlocked, async (req, res) => {
+            const issue = req.body;
+            const email = req.token_email;
+            const query = {};
+            if (email) {
+                query.reporterEmail = email;
+            }
+
+            const user = await usersCollection.findOne({ email });
 
             issue.reporterEmail = user.email;
             issue.reporterName = user.displayName;
@@ -358,9 +384,6 @@ async function run() {
 
             return res.send(result);
         });
-
-        // all user related api's
-        
 
         // citizen related api's
         app.get("/citizen/stats", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
