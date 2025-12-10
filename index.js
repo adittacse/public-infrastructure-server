@@ -7,6 +7,7 @@ const serviceAccount = require("./public-infrastructure-firebase-adminsdk.json")
 const dotenv = require("dotenv");
 dotenv.config();
 const port = process.env.PORT || 3000;
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
@@ -552,6 +553,58 @@ async function run() {
         });
 
         // staff related api's
+        app.get("/staff/overview", verifyFirebaseToken, verifyStaff, async (req, res) => {
+            const email = req.token_email;
+
+            const baseQuery = {
+                assignedStaffEmail: email
+            };
+            
+            const assignedCount = await issuesCollection.countDocuments(baseQuery);
+            
+            const statuses = ["pending", "in_progress", "working", "resolved", "closed"];
+            const countsByStatus = await issuesCollection.aggregate([
+                { $match: baseQuery },
+                {
+                    $group: {
+                        _id: "$status",
+                        count: { $sum: 1 }
+                    }
+                }
+            ]).toArray();
+
+            const countMap = {};
+            statuses.forEach((st) => {
+                countMap[st] = 0;
+            });
+            countsByStatus.forEach((item) => {
+                countMap[item._id] = item.count;
+            });
+            
+            const boostedIssuesCount = await issuesCollection.countDocuments({
+                assignedStaffEmail: email,
+                isBoosted: true
+            });
+            
+            const todayTasksCount = await issuesCollection.countDocuments({
+                assignedStaffEmail: email,
+                status: { $in: ["pending", "in_progress", "working"] }
+            });
+
+            const totalIssues = assignedCount;
+
+            res.send({
+                assignedCount,
+                inProgressCount: countMap["in_progress"] || 0,
+                workingCount: countMap["working"] || 0,
+                resolvedCount: countMap["resolved"] || 0,
+                closedCount: countMap["closed"] || 0,
+                todayTasksCount,
+                boostedIssuesCount,
+                totalIssues
+            });
+        });
+
         app.get("/staff/issues", verifyFirebaseToken, verifyStaff, async (req, res) => {
             const email = req.token_email;
             const { status, priority } = req.query;
@@ -978,60 +1031,138 @@ async function run() {
             },
         );
 
-        // staff related api's
-        app.get("/staff/overview", verifyFirebaseToken, verifyStaff, async (req, res) => {
-            const email = req.token_email;
+        // payment related api's
+        // payment type -> boost_issue, subscription
+        app.post("/create-checkout-session", verifyFirebaseToken, async (req, res) => {
+            const paymentInfo = req.body;
+            const paymentType = paymentInfo.paymentType;  // boost_issue, subscription
 
-            const baseQuery = {
-                assignedStaffEmail: email
+            let amount = 0;
+            let productName = "Payment";
+
+            if (paymentType === "boost_issue") {
+                amount = 100 * 100;
+                productName = `Boost issue: ${paymentInfo.issueTitle}`;
+            } else if (paymentType === "subscription") {
+                amount = 1000 * 100;
+                productName = "Premium Subscription";
+            } else {
+                return res.status(400).send({ message: "Invalid payment type" });
+            }
+
+            const session = await stripe.checkout.sessions.create({
+                line_items: [
+                    {
+                        price_data: {
+                            currency: "bdt",
+                            product_data: {
+                                name: productName,
+                            },
+                            unit_amount: amount,
+                        },
+                        quantity: 1,
+                    },
+                ],
+                customer_email: paymentInfo.customerEmail,
+                mode: "payment",
+                metadata: {
+                    paymentType,
+                    issueId: paymentInfo.issueId || "",
+                    issueTitle: paymentInfo.issueTitle || "",
+                    userName: paymentInfo.customerName,
+                    userEmail: paymentInfo.customerEmail
+                },
+                success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+                cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`
+            });
+
+            res.send({ url: session.url });
+        });
+
+        app.patch("/payment-success", verifyFirebaseToken, async (req, res) => {
+            const sessionId = req.query.session_id;
+            const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+            if (!session.payment_intent) {
+                return res.send({
+                    success: false,
+                    message: "No payment_intent found in Stripe session",
+                });
+            }
+
+            const transactionId = session.payment_intent;
+            const paymentType = session.metadata.paymentType;
+            const userName = session.metadata.userName;
+            const userEmail = session.metadata.userEmail;
+            const issueId = session.metadata.issueId;
+
+            if (session.payment_status !== "paid") {
+                return res.send({ success: false });
+            }
+
+            const payment = {
+                amount: session.amount_total / 100,
+                currency: session.currency,
+                customerName: userName,
+                customerEmail: session.customer_email,
+                transactionId,
+                paymentStatus: session.payment_status,
+                paymentType,
+                issueId: issueId || "",
+                issueTitle: session.metadata.issueTitle || "",
+                paidAt: new Date()
             };
 
-            // মোট assigned issue
-            const assignedCount = await issuesCollection.countDocuments(baseQuery);
+            const query = { transactionId };
+            const update = { $setOnInsert: payment };
+            const options = { upsert: true };
+            const paymentResult = await paymentsCollection.updateOne(query, update, options);
 
-            // status অনুযায়ী count
-            const statuses = ["pending", "in_progress", "working", "resolved", "closed"];
-            const countsByStatus = await issuesCollection.aggregate([
-                { $match: baseQuery },
-                {
-                    $group: {
-                        _id: "$status",
-                        count: { $sum: 1 }
-                    }
+            const newlyCreated = paymentResult.upsertedCount === 1;
+
+            // apply business logic only once
+            if (newlyCreated) {
+                if (paymentType === "boost_issue" && issueId) {
+                    const issueQuery = { _id: new ObjectId(issueId) };
+                    const issueUpdate = {
+                        $set: {
+                            priority: "high",
+                            isBoosted: true,
+                            updatedAt: new Date(),
+                        },
+                    };
+                    await issuesCollection.updateOne(issueQuery, issueUpdate);
+
+                    await logTimeline({
+                        issueId,
+                        status: "boosted",
+                        message: "Issue priority boosted (payment successful)",
+                        updatedByRole: "citizen",
+                        updatedByName: userName,
+                        updatedByEmail: userEmail,
+                    });
                 }
-            ]).toArray();
 
-            const countMap = {};
-            statuses.forEach((st) => {
-                countMap[st] = 0;
-            });
-            countsByStatus.forEach((item) => {
-                countMap[item._id] = item.count;
-            });
+                if (paymentType === "subscription") {
+                    await usersCollection.updateOne(
+                        { email: userEmail },
+                        {
+                            $set: {
+                                isPremium: true,
+                                premiumActivatedAt: new Date(),
+                            },
+                        }
+                    );
+                }
+            }
 
-            // boosted issues (যেগুলোতে isBoosted true)
-            const boostedIssuesCount = await issuesCollection.countDocuments({
-                assignedStaffEmail: email,
-                isBoosted: true
-            });
+            const existingPayment = await paymentsCollection.findOne({ transactionId });
 
-            // todayTasksCount — সহজভাবে ধরলাম pending / in_progress / working
-            const todayTasksCount = await issuesCollection.countDocuments({
-                assignedStaffEmail: email,
-                status: { $in: ["pending", "in_progress", "working"] }
-            });
-
-            const totalIssues = assignedCount;
-
-            res.send({
-                assignedCount,
-                inProgressCount: countMap["in_progress"] || 0,
-                workingCount: countMap["working"] || 0,
-                resolvedCount: countMap["resolved"] || 0,
-                closedCount: countMap["closed"] || 0,
-                todayTasksCount,
-                boostedIssuesCount,
-                totalIssues
+            return res.send({
+                success: true,
+                newlyCreated,
+                transactionId,
+                paymentInfo: existingPayment
             });
         });
 
