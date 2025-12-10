@@ -209,8 +209,8 @@ async function run() {
             if (!user.isPremium) {
                 const count = await issuesCollection.countDocuments(query);
                 if (count >= 3) {
-                    return res.status(403).send({
-                        message: "Free user issue limit exceeded",
+                    return res.status(429).send({
+                        message: "Free user issue limit exceeded. Buy premium to post more issues",
                         needSubscription: true,
                     });
                 }
@@ -241,7 +241,7 @@ async function run() {
                 updatedByRole: "citizen"
             });
 
-            res.send(result);
+            return res.send(result);
         });
 
         // all user related api's
