@@ -140,19 +140,6 @@ async function run() {
         }
 
         // user's related api's
-        app.get("/user/profile", verifyFirebaseToken, async (req, res) => {
-            const tokenEmail = req.token_email;
-            const email = req.query.email;
-            
-            if (email !== tokenEmail) {
-                return res.status(403).send({ message: "Forbidden Access" });
-            }
-
-            const query = { email: email };
-            const user = await usersCollection.findOne(query);
-            res.send(user);
-        });
-
         app.get("/users/:email/role", async (req, res) => {
             const email = req.params.email;
             const query = {};
@@ -187,25 +174,6 @@ async function run() {
 
             const result = await usersCollection.insertOne(user);
             return res.send(result);
-        });
-
-        app.patch("/user/profile/:id", verifyFirebaseToken, async (req, res) => {
-            const id = req.params.id;
-            const userUpdatedData = req.body;
-            const query = { _id: new ObjectId(id) };
-            const update = {
-                $set: {
-                    displayName: userUpdatedData.displayName,
-                }
-            };
-
-            if (userUpdatedData.photoURL) {
-                update.$set.photoURL = userUpdatedData.photoURL;
-            }
-
-            const options = {};
-            const result = await usersCollection.updateOne(query, update, options);
-            res.send(result);
         });
 
         // categories related api's
@@ -799,6 +767,19 @@ async function run() {
             const result = await cursor.toArray();
             res.send(result);
         });
+
+        app.get("/admin/profile", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const tokenEmail = req.token_email;
+            const email = req.query.email;
+            
+            if (email !== tokenEmail) {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+
+            const query = { email: email };
+            const user = await usersCollection.findOne(query);
+            res.send(user);
+        });
         
         app.patch("/admin/users/:id/role", verifyFirebaseToken, verifyAdmin, async (req, res) => {
             const id = req.params.id;
@@ -907,6 +888,25 @@ async function run() {
                 updatedByRole: req.currentUser.role
             });
 
+            res.send(result);
+        });
+
+        app.patch("/admin/profile/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const userUpdatedData = req.body;
+            const query = { _id: new ObjectId(id) };
+            const update = {
+                $set: {
+                    displayName: userUpdatedData.displayName,
+                }
+            };
+
+            if (userUpdatedData.photoURL) {
+                update.$set.photoURL = userUpdatedData.photoURL;
+            }
+
+            const options = {};
+            const result = await usersCollection.updateOne(query, update, options);
             res.send(result);
         });
 
