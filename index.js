@@ -128,6 +128,19 @@ async function run() {
         }
 
         // user's related api's
+        app.get("/user/profile", verifyFirebaseToken, async (req, res) => {
+            const tokenEmail = req.token_email;
+            const email = req.query.email;
+            
+            if (email !== tokenEmail) {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+
+            const query = { email: email };
+            const user = await usersCollection.findOne(query);
+            res.send(user);
+        });
+        
         app.get("/users/:email/role", async (req, res) => {
             const email = req.params.email;
             const query = {};
@@ -162,6 +175,108 @@ async function run() {
 
             const result = await usersCollection.insertOne(user);
             return res.send(result);
+        });
+
+        app.patch("/user/profile/:id", verifyFirebaseToken, async (req, res) => {
+            const id = req.params.id;
+            const userUpdatedData = req.body;
+            const query = { _id: new ObjectId(id) };
+            const update = {
+                $set: {
+                    displayName: userUpdatedData.displayName,
+                }
+            };
+
+            if (userUpdatedData.photoURL) {
+                update.$set.photoURL = userUpdatedData.photoURL;
+            }
+
+            const options = {};
+            const result = await usersCollection.updateOne(query, update, options);
+            res.send(result);
+        });
+
+        // categories related api's
+        app.get("/categories", verifyFirebaseToken, async (req, res) => {
+            const pipeline = [
+                {
+                    $lookup: {
+                        from: "issues",
+                        localField: "categoryName",
+                        foreignField: "category",
+                        as: "issues"
+                    }
+                },
+                {
+                    $addFields: {
+                        issuesCount: {
+                            $size: "$issues"
+                        }
+                    }
+                },
+                {
+                    $project: {
+                        issues: 0
+                    }
+                },
+                {
+                    $sort: {
+                        categoryName: 1
+                    }
+                }
+            ];
+
+            const cursor = categoriesCollection.aggregate(pipeline);
+            const result = await cursor.toArray();
+            res.send(result);
+        });
+
+        app.post("/categories", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const categoryName = req.body.categoryName;
+            const query = {
+                categoryName: { $regex: categoryName, $options: "i" }
+            };
+
+            const categoryExists = await categoriesCollection.findOne(query);
+            if (categoryExists) {
+                return res.status(400).send({ message: "Category already exists" });
+            }
+
+            const category = {
+                categoryName,
+                createdAt: new Date()
+            };
+
+            const result = await categoriesCollection.insertOne(category);
+            res.send(result);
+        });
+
+        app.patch("/categories/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const { categoryName } = req.body;
+
+            if (!categoryName) {
+                return res.status(400).send({ message: "Category name is required" });
+            }
+
+            const query = { _id: new ObjectId(id) };
+
+            const update = {
+                $set: {
+                    categoryName,
+                    updatedAt: new Date()
+                }
+            };
+
+            const result = await categoriesCollection.updateOne(query, update);
+            res.send(result);
+        });
+
+        app.delete("/categories/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            const result = await categoriesCollection.deleteOne(query);
+            res.send(result);
         });
 
         // issues related api's
@@ -245,37 +360,7 @@ async function run() {
         });
 
         // all user related api's
-        app.get("/user/profile", verifyFirebaseToken, async (req, res) => {
-            const tokenEmail = req.token_email;
-            const email = req.query.email;
-            
-            if (email !== tokenEmail) {
-                return res.status(403).send({ message: "Forbidden Access" });
-            }
-
-            const query = { email: email };
-            const user = await usersCollection.findOne(query);
-            res.send(user);
-        });
-
-        app.patch("/user/profile/:id", verifyFirebaseToken, async (req, res) => {
-            const id = req.params.id;
-            const userUpdatedData = req.body;
-            const query = { _id: new ObjectId(id) };
-            const update = {
-                $set: {
-                    displayName: userUpdatedData.displayName,
-                }
-            };
-
-            if (userUpdatedData.photoURL) {
-                update.$set.photoURL = userUpdatedData.photoURL;
-            }
-
-            const options = {};
-            const result = await usersCollection.updateOne(query, update, options);
-            res.send(result);
-        });
+        
 
         // citizen related api's
         app.get("/citizen/stats", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
@@ -656,40 +741,6 @@ async function run() {
             res.send(result);
         });
 
-        app.get("/admin/categories", verifyFirebaseToken, async (req, res) => {
-            const pipeline = [
-                {
-                    $lookup: {
-                        from: "issues",
-                        localField: "categoryName",
-                        foreignField: "category",
-                        as: "issues"
-                    }
-                },
-                {
-                    $addFields: {
-                        issuesCount: {
-                            $size: "$issues"
-                        }
-                    }
-                },
-                {
-                    $project: {
-                        issues: 0
-                    }
-                },
-                {
-                    $sort: {
-                        categoryName: 1
-                    }
-                }
-            ];
-
-            const cursor = categoriesCollection.aggregate(pipeline);
-            const result = await cursor.toArray();
-            res.send(result);
-        });
-
         app.get("/admin/users", verifyFirebaseToken, verifyAdmin, async (req, res) => {
             const { searchText } = req.params;
             const query = {};
@@ -723,26 +774,6 @@ async function run() {
             const options = { createdAt: -1 };
             const cursor = usersCollection.find(query, options);
             const result = await cursor.toArray();
-            res.send(result);
-        });
-
-        app.post("/admin/categories", verifyFirebaseToken, verifyAdmin, async (req, res) => {
-            const categoryName = req.body.categoryName;
-            const query = {
-                categoryName: { $regex: categoryName, $options: "i" }
-            };
-
-            const categoryExists = await categoriesCollection.findOne(query);
-            if (categoryExists) {
-                return res.status(400).send({ message: "Category already exists" });
-            }
-
-            const category = {
-                categoryName,
-                createdAt: new Date()
-            };
-
-            const result = await categoriesCollection.insertOne(category);
             res.send(result);
         });
         
@@ -856,27 +887,6 @@ async function run() {
             res.send(result);
         });
 
-        app.patch("/admin/categories/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
-            const id = req.params.id;
-            const { categoryName } = req.body;
-
-            if (!categoryName) {
-                return res.status(400).send({ message: "Category name is required" });
-            }
-
-            const query = { _id: new ObjectId(id) };
-
-            const update = {
-                $set: {
-                    categoryName,
-                    updatedAt: new Date()
-                }
-            };
-
-            const result = await categoriesCollection.updateOne(query, update);
-            res.send(result);
-        });
-
         app.delete("/admin/users/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
                 const id = req.params.id;
                 const query = { _id: new ObjectId(id) };
@@ -896,13 +906,6 @@ async function run() {
                 return res.send(result);
             },
         );
-
-        app.delete("/admin/categories/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
-            const id = req.params.id;
-            const query = { _id: new ObjectId(id) };
-            const result = await categoriesCollection.deleteOne(query);
-            res.send(result);
-        });
 
         // staff related api's
         app.get("/staff/overview", verifyFirebaseToken, verifyStaff, async (req, res) => {
