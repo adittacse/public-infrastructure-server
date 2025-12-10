@@ -389,7 +389,7 @@ async function run() {
             });
         });
 
-        app.get("/citizen/my-issue-locations", verifyFirebaseToken, async (req, res) => {
+        app.get("/citizen/my-issue-locations", verifyFirebaseToken, verifyCitizen, async (req, res) => {
             const email = req.token_email;
 
             const pipeline = [
@@ -444,6 +444,21 @@ async function run() {
             res.send(result);
         });
 
+        app.get("/citizen/profile", verifyFirebaseToken, verifyCitizen, async (req, res) => {
+            const email = req.query.email;
+            const query = {};
+            if (email) {
+                query.email = email;
+            }
+
+            if (req.token_email !== email) {
+                return res.status(403).send({ message: "Forbidden access" });
+            }
+
+            const user = await usersCollection.findOne(query);
+            res.send(user);
+        });
+
         app.patch("/citizen/issues/:id", verifyFirebaseToken, verifyNotBlocked, async (req, res)=> {
             const id = req.params.id;
             const displayName = req.currentUser.displayName;
@@ -489,6 +504,32 @@ async function run() {
                 updatedByRole: "citizen"
             });
 
+            res.send(result);
+        });
+
+        app.patch("/citizen/profile/:id", verifyFirebaseToken, verifyCitizen, async (req, res) => {
+            const id = req.params.id;
+            const userUpdatedData = req.body;
+            const query = { _id: new ObjectId(id) };
+
+            const user = await usersCollection.findOne(query);
+
+            if (req.token_email !== user.email) {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+
+            const update = {
+                $set: {
+                    displayName: userUpdatedData.displayName
+                }
+            };
+
+            if (userUpdatedData.photoURL) {
+                update.$set.photoURL = userUpdatedData.photoURL;
+            }
+
+            const options = {};
+            const result = await usersCollection.updateOne(query, update, options);
             res.send(result);
         });
 
@@ -895,6 +936,13 @@ async function run() {
             const id = req.params.id;
             const userUpdatedData = req.body;
             const query = { _id: new ObjectId(id) };
+
+            const user = await usersCollection.findOne(query);
+
+            if (req.token_email !== user.email) {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+
             const update = {
                 $set: {
                     displayName: userUpdatedData.displayName,
