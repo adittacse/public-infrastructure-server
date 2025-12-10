@@ -458,6 +458,66 @@ async function run() {
             const result = await cursor.toArray();
             res.send(result);
         });
+        
+        app.patch("/staff/issues/:id/status", verifyFirebaseToken, verifyStaff, async (req, res) => {
+            const id = req.params.id;
+            const email = req.token_email;
+            const displayName = req.currentUser?.name || req.currentUser?.displayName;
+            const { newStatus } = req.body;
+
+            if (!newStatus) {
+                return res.status(400).send({ message: "New status is required" });
+            }
+
+            const query = { _id: new ObjectId(id) };
+            const issue = await issuesCollection.findOne(query);
+
+            if (!issue) {
+                return res.status(404).send({ message: "Issue not found" });
+            }
+            
+            // can't change if owned assigned
+            if (issue.assignedStaffEmail !== email) {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+
+            // allowed transitions
+            const allowedTransitions = {
+                pending: ["in_progress"],
+                in_progress: ["working"],
+                working: ["resolved"],
+                resolved: ["closed"]
+            };
+
+            const currentStatus = issue.status;
+            const allowed = allowedTransitions[currentStatus] || [];
+
+            if (!allowed.includes(newStatus)) {
+                return res.status(400).send({
+                    message: `Invalid status transition from ${currentStatus} to ${newStatus}`
+                });
+            }
+
+            const update = {
+                $set: {
+                    status: newStatus,
+                    updatedAt: new Date()
+                }
+            };
+
+            const result = await issuesCollection.updateOne(query, update);
+            
+            await logTimeline({
+                issueId: id,
+                status: newStatus,
+                message: `Status changed by staff (${currentStatus} → ${newStatus})`,
+                updatedByName: displayName,
+                updatedByRole: "staff",
+                updatedByEmail: email
+            });
+
+            res.send(result);
+        });
 
         // admin related api's
         app.get("/admin/overview", verifyFirebaseToken, verifyAdmin, async (req, res) => {
