@@ -1040,6 +1040,26 @@ async function run() {
         );
 
         // payment related api's
+        app.get("/admin/payments", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const { searchText, paymentType } = req.query;
+            const query = {};
+
+            if (searchText) {
+                query.$or = [
+                    { customerName: { $regex: searchText, $options: "i" } },
+                    { customerEmail: { $regex: searchText, $options: "i" } },
+                ];
+            }
+
+            if (paymentType) {
+                query.paymentType = paymentType;
+            }
+
+            const cursor = paymentsCollection.find(query).sort({ paidAt: -1 });
+            const result = await cursor.toArray();
+            res.send(result);
+        });
+
         // payment type -> boost_issue, subscription
         app.post("/create-checkout-session", verifyFirebaseToken, async (req, res) => {
             const paymentInfo = req.body;
