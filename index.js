@@ -823,7 +823,7 @@ async function run() {
 
             const options = { 
                 sort: {
-                    title: "ascending", priority: -1, createdAt: -1
+                    priority: 1, createdAt: -1
                 }
             };
             const cursor = issuesCollection.find(query, options);
@@ -832,15 +832,13 @@ async function run() {
         });
 
         app.get("/admin/users", verifyFirebaseToken, verifyAdmin, async (req, res) => {
-            const { searchText } = req.params;
-            const query = {};
-            // const query = {
-            //     $or: [
-            //         { role: { $exists: false } },
-            //         { role: "citizen" },
-            //         { role: "staff" }
-            //     ]
-            // };
+            const searchText = req.query.searchText;
+            const query = {
+                $or: [
+                    { role: { $exists: false } },
+                    { role: "citizen" }
+                ]
+            };
 
             if (searchText) {
                 query.$and = [
@@ -860,8 +858,22 @@ async function run() {
         });
 
         app.get("/admin/staff", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const searchText = req.query.searchText;
             const query = { role: "staff" };
-            const options = { createdAt: -1 };
+
+            if (searchText) {
+                query.$or = [
+                    { displayName: { $regex: searchText, $options: "i" } },
+                    { email: { $regex: searchText, $options: "i" } },
+                ];
+            }
+
+            const options = { 
+                sort: {
+                    createdAt: -1
+                }
+            };
+
             const cursor = usersCollection.find(query, options);
             const result = await cursor.toArray();
             res.send(result);
@@ -1009,6 +1021,26 @@ async function run() {
 
             if (userUpdatedData.photoURL) {
                 update.$set.photoURL = userUpdatedData.photoURL;
+            }
+
+            const options = {};
+            const result = await usersCollection.updateOne(query, update, options);
+            res.send(result);
+        });
+
+        app.patch("/admin/staff/:staffEmail", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const email = req.params.staffEmail;
+            const staffUpdatedData = req.body;
+            const query = { email: email };
+
+            const update = {
+                $set: {
+                    displayName: staffUpdatedData.displayName,
+                }
+            };
+
+            if (staffUpdatedData.photoURL) {
+                update.$set.photoURL = staffUpdatedData.photoURL;
             }
 
             const options = {};
