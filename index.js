@@ -382,12 +382,16 @@ async function run() {
             const cursor = issuesCollection.aggregate(pipeline);
             const statusStats = await cursor.toArray();
 
-            const paymentCursor = paymentsCollection.find(query).sort({ paidAT: -1 });
+            const paymentCursor = paymentsCollection.find(query).sort({ paidAt: -1 });
             const payments = await paymentCursor.toArray();
+            const totalPayments = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+            const paymentsCount = payments.length;
+
             res.send({
                 statusStats,
-                totalPayments: paymentCursor.length,
-                payments
+                payments,
+                totalPayments,
+                paymentsCount
             });
         });
 
