@@ -113,18 +113,6 @@ async function run() {
             next();
         };
 
-        // more middleware
-        const verifyNotBlocked = async (req, res, next) => {
-            const email = req.token_email;
-            const query = { email: email };
-            const user = await usersCollection.findOne(query);
-            if (user && user.isBlocked) {
-                return res.status(403).send({ message: "You are blocked by admin" });
-            }
-            req.currentUser = user;
-            next();
-        }
-
         // helper
         const logTimeline = async (data) => {
             const { issueId, status, message, updatedByName, updatedByEmail, updatedByRole } = data;
@@ -289,7 +277,7 @@ async function run() {
             return res.send({ issue, timelines });
         });
 
-        app.get("/issues/:email/limit", verifyFirebaseToken, verifyCitizen, verifyNotBlocked, async (req, res) => {
+        app.get("/issues/:email/limit", verifyFirebaseToken, verifyCitizen, async (req, res) => {
             const email = req.params.email;
             const query = {};
             if (email) {
@@ -317,7 +305,7 @@ async function run() {
             return res.status(200).send({ allowPosting: true });
         });
 
-        app.post("/issues", verifyFirebaseToken, verifyCitizen, verifyNotBlocked, async (req, res) => {
+        app.post("/issues", verifyFirebaseToken, verifyCitizen, async (req, res) => {
             const issue = req.body;
             const email = req.token_email;
             const query = {};
@@ -430,7 +418,7 @@ async function run() {
         });
 
         app.get("/citizen/my-issues", verifyFirebaseToken, verifyCitizen, async (req, res) => {
-            const { email, status, location } = req.query;
+            const { email, status, category, location } = req.query;
             const query = {};
 
             if (email) {
@@ -443,6 +431,10 @@ async function run() {
 
             if (status) {
                 query.status = status;
+            }
+
+            if (category) {
+                query.category = category;
             }
 
             if (location) {
@@ -1103,7 +1095,8 @@ async function run() {
                     issueId: paymentInfo.issueId || "",
                     issueTitle: paymentInfo.issueTitle || "",
                     userName: paymentInfo.customerName,
-                    userEmail: paymentInfo.customerEmail
+                    userEmail: paymentInfo.customerEmail,
+                    userImage: paymentInfo.customerImage
                 },
                 success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
                 cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`
@@ -1127,6 +1120,7 @@ async function run() {
             const paymentType = session.metadata.paymentType;
             const userName = session.metadata.userName;
             const userEmail = session.metadata.userEmail;
+            const userImage = session.metadata.userImage;
             const issueId = session.metadata.issueId;
 
             if (session.payment_status !== "paid") {
@@ -1138,6 +1132,7 @@ async function run() {
                 currency: session.currency,
                 customerName: userName,
                 customerEmail: session.customer_email,
+                customerImage: userImage,
                 transactionId,
                 paymentStatus: session.payment_status,
                 paymentType,
