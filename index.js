@@ -4,6 +4,7 @@ const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
 const serviceAccount = require("./public-infrastructure-firebase-adminsdk.json");
+const PDFDocument = require("pdfkit");
 const dotenv = require("dotenv");
 dotenv.config();
 const port = process.env.PORT || 3000;
@@ -1192,6 +1193,80 @@ async function run() {
                 transactionId,
                 paymentInfo: existingPayment
             });
+        });
+
+        // payment pdf related api
+        app.get("/admin/payments/:id/invoice", verifyFirebaseToken, async (req, res) => {
+            try {
+                const id = req.params.id;
+                const query = { _id: new ObjectId(id) };
+
+                // 1. get payment data
+                const payment = await paymentsCollection.findOne(query);
+
+                if (!payment) {
+                    return res.status(404).send({ message: "Payment not found" });
+                }
+
+                // 2. set pdf response header
+                const fileName = `invoice-${payment.transactionId || payment._id}.pdf`;
+
+                res.setHeader("Content-Type", "application/pdf");
+                res.setHeader("Content-Disposition",`inline; filename="${fileName}"`);
+
+                // 3. create pdf document
+                const doc = new PDFDocument({ size: "A4", margin: 50 });
+                
+                // sending stream to the response directly
+                doc.pipe(res);
+
+                // a. pdf header
+                doc.fontSize(18).text("Public Infrastructure Issue Reporting", {
+                    align: "left",
+                });
+
+                doc.moveDown(0.5);
+
+                doc.fontSize(12).text("Invoice", { align: "left" }).moveDown(1);
+
+                // b. invoice info
+                doc.fontSize(11).text(`Invoice ID: ${payment._id}`, { align: "left" });
+                doc.text(`Transaction ID: ${payment.transactionId || "N/A"}`);
+                doc.text(`Date: ${new Date(payment.paidAt).toLocaleString()}`);
+                
+                doc.moveDown(1);
+
+                // c. customer info
+                doc.fontSize(12).text("Billed To:", { underline: true });
+                doc.fontSize(11).text(`Email: ${payment.customerName} - ${payment.customerEmail}`).moveDown(1);
+                
+                // d. payment details table type layout
+                doc.fontSize(12).text("Payment Details", { underline: true }).moveDown(0.5);
+
+                doc.fontSize(11);
+
+                doc.text(`Payment Type    : ${payment.paymentType?.split("_")?.join(" ")}`);
+
+                if (payment.paymentType === "boost_issue") {
+                    doc.text(`Issue ID             : ${payment.issueId || "N/A"}`);
+                    doc.text(`Issue Title          : ${payment.issueTitle || "N/A"}`);
+                }
+
+                doc.text(`Amount              : ${payment.amount} ${payment.currency?.toUpperCase() ||""}`);
+
+                doc.text(`Payment Status : ${payment.paymentStatus}`);
+
+                doc.moveDown(2);
+
+                // doc.fontSize(10).fillColor("gray").text("This is a system generated invoice. No signature is required.", { 
+                //     align: "center" 
+                // });
+
+                // 4. end pdf document
+                doc.end();
+            } catch {
+                return res.status(500).send({ message: "Failed to generate invoice" });
+            }
         });
 
         // Send a ping to confirm a successful connection
