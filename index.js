@@ -356,7 +356,7 @@ async function run() {
         });
 
         // citizen related api's
-        app.get("/citizen/stats", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
+        app.get("/citizen/stats", verifyFirebaseToken, verifyCitizen, async (req, res) => {
             const email = req.token_email;
             const query = {};
             if (email) {
@@ -425,7 +425,7 @@ async function run() {
             res.send(result);
         });
 
-        app.get("/citizen/my-issues", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
+        app.get("/citizen/my-issues", verifyFirebaseToken, verifyCitizen, async (req, res) => {
             const { email, status, location } = req.query;
             const query = {};
 
@@ -468,8 +468,8 @@ async function run() {
             const user = await usersCollection.findOne(query);
             res.send(user);
         });
-
-        app.patch("/citizen/issues/:id", verifyFirebaseToken, verifyNotBlocked, async (req, res)=> {
+        
+        app.patch("/citizen/issues/:id", verifyFirebaseToken, verifyCitizen, async (req, res)=> {
             const id = req.params.id;
             const displayName = req.currentUser.displayName;
             const email = req.token_email;
@@ -542,8 +542,8 @@ async function run() {
             const result = await usersCollection.updateOne(query, update, options);
             res.send(result);
         });
-
-        app.delete("/citizen/issues/:id", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
+        
+        app.delete("/citizen/issues/:id", verifyFirebaseToken, verifyCitizen, async (req, res) => {
             const id = req.params.id;
             const email = req.token_email;
             const query = { _id: new ObjectId(id) };
