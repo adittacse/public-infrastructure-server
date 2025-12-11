@@ -425,13 +425,21 @@ async function run() {
         });
 
         app.get("/citizen/my-issues", verifyFirebaseToken, verifyNotBlocked, async (req, res) => {
-            const email = req.token_email;
-            const { status, location } = req.query;
-            const query = { reporterEmail: email };
+            const { email, status, location } = req.query;
+            const query = {};
+
+            if (email) {
+                query.reporterEmail = email;
+            }
+
+            if (req.token_email !== email) {
+                return res.status(403).send({ message: "Forbidden access" });
+            }
 
             if (status) {
                 query.status = status;
             }
+
             if (location) {
                 query.location = location;
             }
