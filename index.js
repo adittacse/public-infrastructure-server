@@ -168,7 +168,7 @@ async function run() {
         });
 
         // categories related api's
-        app.get("/categories", verifyFirebaseToken, async (req, res) => {
+        app.get("/categories", async (req, res) => {
             const searchText = req.query.searchText;
             const query = {};
 
@@ -260,7 +260,110 @@ async function run() {
             res.send(result);
         });
 
+        // location related api's
+        app.get("/locations/issue-locations", async (req, res) => {
+            const pipeline = [
+                {
+                    $group: {
+                        _id: "$location",
+                    }
+                },
+                {
+                    $project: {
+                        _id: 0,
+                        location: "$_id",
+                    }
+                },
+                {
+                    $sort: {
+                        location: 1
+                    }
+                }
+            ];
+
+            const cursor = issuesCollection.aggregate(pipeline);
+            const locations = await cursor.toArray();
+            
+            const result = locations.map(item => item.location).filter(Boolean);
+            res.send(result);
+        });
+
         // issues related api's
+        app.get("/issues", async (req, res) => {
+            let {
+                page = 1,
+                limit = 10,
+                search = "",
+                status = "",
+                priority = "",
+                category = "",
+                location = ""
+            } = req.query;
+
+            page = Number(page) || 1;
+            limit = Number(limit);
+
+            let skip = 0;
+            let useLimit = limit > 0;
+
+            if (useLimit) {
+                skip = limit * (page - 1);
+            }
+
+            const query = {};
+
+            if (search) {
+                query.title = { $regex: search, $options: "i" }
+            }
+
+            if (status) {
+                query.status = status;
+            }
+
+            if (priority) {
+                query.priority = priority;
+            }
+
+            if (category) {
+                query.category = category;
+            }
+
+            if (location) {
+                query.location = { $regex: location, $options: "i" };
+            }
+
+            const options = {
+                sort: {
+                    priority: 1,
+                    upvoteCount: -1,
+                    createdAt: -1
+                }
+            }
+
+            let cursorIssues = issuesCollection.find(query, options);
+
+            if (useLimit) {
+                cursorIssues = cursorIssues.limit(limit).skip(skip);
+            }
+
+            const issues = await cursorIssues.toArray();
+                
+            const total = await issuesCollection.countDocuments(query);
+
+            const effectiveLimit = useLimit ? limit : total;
+            const last_page = useLimit ? Math.ceil(total / limit) : 1;
+
+            return res.status(200).send({
+                total,
+                per_page: effectiveLimit,
+                from: useLimit ? skip + 1 : (total ? 1 : 0),
+                to: useLimit ? skip + issues.length : total,
+                current_page: useLimit ? page : 1,
+                last_page,
+                result: issues
+            });
+        });
+
         app.get("/issues/latest-resolved", async (req, res) => {
             const query = {
                 status: {
