@@ -623,7 +623,7 @@ async function run() {
 
         app.get("/staff/issues", verifyFirebaseToken, verifyStaff, async (req, res) => {
             const email = req.token_email;
-            const { status, priority } = req.query;
+            const { status, priority, searchText } = req.query;
             const query = { assignedStaffEmail: email };
 
             if (status) {
@@ -631,6 +631,12 @@ async function run() {
             }
             if (priority) {
                 query.priority = priority;
+            }
+            if (searchText) {
+                query.$or = [
+                    { title: { $regex: searchText, $options: "i" } },
+                    { reporterName: { $regex: searchText, $options: "i" } }
+                ]
             }
             
             const options = {
