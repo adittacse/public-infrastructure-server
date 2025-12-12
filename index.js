@@ -136,6 +136,7 @@ async function run() {
             if (email) {
                 query.email = email;
             }
+
             const user = await usersCollection.findOne(query);
             res.send({
                 role: user?.role || "citizen",
@@ -168,7 +169,17 @@ async function run() {
 
         // categories related api's
         app.get("/categories", verifyFirebaseToken, async (req, res) => {
+            const searchText = req.query.searchText;
+            const query = {};
+
+            if (searchText) {
+                query.categoryName = { $regex: searchText, $options: "i" };
+            }
+
             const pipeline = [
+                {
+                    $match: query
+                },
                 {
                     $lookup: {
                         from: "issues",
@@ -191,7 +202,7 @@ async function run() {
                 },
                 {
                     $sort: {
-                        categoryName: 1
+                        categoryName: 1,
                     }
                 }
             ];
@@ -634,6 +645,22 @@ async function run() {
             res.send(result);
         });
         
+        app.get("/staff/profile", verifyFirebaseToken, verifyStaff, async (req, res) => {
+            const email = req.query.email;
+            const query = {};
+
+            if (email) {
+                query.email = email;
+            }
+
+            if (req.token_email !== email) {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+
+            const user = await usersCollection.findOne(query);
+            return res.send(user);
+        });
+        
         app.patch("/staff/issues/:id/status", verifyFirebaseToken, verifyStaff, async (req, res) => {
             const id = req.params.id;
             const email = req.token_email;
@@ -691,6 +718,32 @@ async function run() {
                 updatedByEmail: email
             });
 
+            res.send(result);
+        });
+        
+        app.patch("/staff/profile/:id", verifyFirebaseToken, verifyStaff, async (req, res) => {
+            const id = req.params.id;
+            const updatedProfile = req.body;
+            const query = { _id: new ObjectId(id) };
+
+            const user = await usersCollection.findOne(query);
+
+            if (req.token_email !== user.email) {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+
+            const update = {
+                $set: {
+                    displayName: updatedProfile.displayName
+                }
+            };
+
+            if (updatedProfile.photoURL) {
+                update.$set.photoURL = updatedProfile.photoURL;
+            }
+
+            const options = {};
+            const result = await usersCollection.updateOne(query, update, options);
             res.send(result);
         });
 
@@ -880,10 +933,9 @@ async function run() {
         });
 
         app.get("/admin/profile", verifyFirebaseToken, verifyAdmin, async (req, res) => {
-            const tokenEmail = req.token_email;
             const email = req.query.email;
             
-            if (email !== tokenEmail) {
+            if (req.token_email !== email) {
                 return res.status(403).send({ message: "Forbidden Access" });
             }
 
