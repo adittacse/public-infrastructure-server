@@ -1269,7 +1269,37 @@ async function run() {
                 query.$or = [
                     { customerName: { $regex: searchText, $options: "i" } },
                     { customerEmail: { $regex: searchText, $options: "i" } },
+                    { transactionId: { $regex: searchText, $options: "i" } }
                 ];
+            }
+
+            if (paymentType) {
+                query.paymentType = paymentType;
+            }
+
+            const cursor = paymentsCollection.find(query).sort({ paidAt: -1 });
+            const result = await cursor.toArray();
+            res.send(result);
+        });
+
+        app.get("/citizen/payments", verifyFirebaseToken, verifyCitizen, async (req, res) => {
+            const { email, searchText, paymentType } = req.query;
+            const query = {};
+
+            if (req.token_email !== email) {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+
+            if (email) {
+                query.customerEmail = email;
+            }
+
+            if (searchText) {
+                query.$or = [
+                    { issueTitle: { $regex: searchText, $options: "i" } },
+                    { subscriptionTitle: { $regex: searchText, $options: "i" } },
+                    { transactionId: { $regex: searchText, $options: "i" } }
+                ]
             }
 
             if (paymentType) {
@@ -1299,6 +1329,25 @@ async function run() {
                 return res.status(400).send({ message: "Invalid payment type" });
             }
 
+            const metadata = {
+                paymentType,
+                userName: paymentInfo.customerName,
+                userEmail: paymentInfo.customerEmail,
+                userImage: paymentInfo.customerImage
+            }
+
+            if (paymentInfo.issueId) {
+                metadata.issueId = paymentInfo.issueId;
+            }
+
+            if (paymentInfo.issueTitle) {
+                metadata.issueTitle = paymentInfo.issueTitle;
+            }
+
+            if (paymentInfo.paymentType === "subscription") {
+                metadata.subscriptionTitle = "profile";
+            }
+
             const session = await stripe.checkout.sessions.create({
                 line_items: [
                     {
@@ -1314,14 +1363,7 @@ async function run() {
                 ],
                 customer_email: paymentInfo.customerEmail,
                 mode: "payment",
-                metadata: {
-                    paymentType,
-                    issueId: paymentInfo.issueId || "",
-                    issueTitle: paymentInfo.issueTitle || "",
-                    userName: paymentInfo.customerName,
-                    userEmail: paymentInfo.customerEmail,
-                    userImage: paymentInfo.customerImage
-                },
+                metadata: metadata,
                 success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
                 cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`
             });
@@ -1346,6 +1388,8 @@ async function run() {
             const userEmail = session.metadata.userEmail;
             const userImage = session.metadata.userImage;
             const issueId = session.metadata.issueId;
+            const issueName = session.metadata.issueTitle;
+            const subscriptionTitle = session.metadata.subscriptionTitle;
 
             if (session.payment_status !== "paid") {
                 return res.send({ success: false });
@@ -1360,10 +1404,20 @@ async function run() {
                 transactionId,
                 paymentStatus: session.payment_status,
                 paymentType,
-                issueId: issueId || "",
-                issueTitle: session.metadata.issueTitle || "",
                 paidAt: new Date()
             };
+
+            if (issueId) {
+                payment.issueId = issueId;
+            }
+
+            if (session.metadata.issueTitle) {
+                payment.issueTitle = issueName;
+            }
+
+            if (session.metadata.subscriptionTitle) {
+                payment.subscriptionTitle = subscriptionTitle;
+            }
 
             const query = { transactionId };
             const update = { $setOnInsert: payment };
@@ -1416,80 +1470,6 @@ async function run() {
                 transactionId,
                 paymentInfo: existingPayment
             });
-        });
-
-        // payment pdf related api
-        app.get("/admin/payments/:id/invoice", verifyFirebaseToken, async (req, res) => {
-            try {
-                const id = req.params.id;
-                const query = { _id: new ObjectId(id) };
-
-                // 1. get payment data
-                const payment = await paymentsCollection.findOne(query);
-
-                if (!payment) {
-                    return res.status(404).send({ message: "Payment not found" });
-                }
-
-                // 2. set pdf response header
-                const fileName = `invoice-${payment.transactionId || payment._id}.pdf`;
-
-                res.setHeader("Content-Type", "application/pdf");
-                res.setHeader("Content-Disposition",`inline; filename="${fileName}"`);
-
-                // 3. create pdf document
-                const doc = new PDFDocument({ size: "A4", margin: 50 });
-                
-                // sending stream to the response directly
-                doc.pipe(res);
-
-                // a. pdf header
-                doc.fontSize(18).text("Public Infrastructure Issue Reporting", {
-                    align: "left",
-                });
-
-                doc.moveDown(0.5);
-
-                doc.fontSize(12).text("Invoice", { align: "left" }).moveDown(1);
-
-                // b. invoice info
-                doc.fontSize(11).text(`Invoice ID: ${payment._id}`, { align: "left" });
-                doc.text(`Transaction ID: ${payment.transactionId || "N/A"}`);
-                doc.text(`Date: ${new Date(payment.paidAt).toLocaleString()}`);
-                
-                doc.moveDown(1);
-
-                // c. customer info
-                doc.fontSize(12).text("Billed To:", { underline: true });
-                doc.fontSize(11).text(`Email: ${payment.customerName} - ${payment.customerEmail}`).moveDown(1);
-                
-                // d. payment details table type layout
-                doc.fontSize(12).text("Payment Details", { underline: true }).moveDown(0.5);
-
-                doc.fontSize(11);
-
-                doc.text(`Payment Type    : ${payment.paymentType?.split("_")?.join(" ")}`);
-
-                if (payment.paymentType === "boost_issue") {
-                    doc.text(`Issue ID             : ${payment.issueId || "N/A"}`);
-                    doc.text(`Issue Title          : ${payment.issueTitle || "N/A"}`);
-                }
-
-                doc.text(`Amount              : ${payment.amount} ${payment.currency?.toUpperCase() ||""}`);
-
-                doc.text(`Payment Status : ${payment.paymentStatus}`);
-
-                doc.moveDown(2);
-
-                // doc.fontSize(10).fillColor("gray").text("This is a system generated invoice. No signature is required.", { 
-                //     align: "center" 
-                // });
-
-                // 4. end pdf document
-                doc.end();
-            } catch {
-                return res.status(500).send({ message: "Failed to generate invoice" });
-            }
         });
 
         // Send a ping to confirm a successful connection
