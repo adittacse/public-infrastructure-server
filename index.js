@@ -302,6 +302,9 @@ async function run() {
 
             page = Number(page) || 1;
             limit = Number(limit);
+            if (Number.isNaN(limit) || limit < 0) {
+                limit = 10;
+            }
 
             let skip = 0;
             let useLimit = limit > 0;
