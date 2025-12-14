@@ -4,7 +4,6 @@ const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
 const serviceAccount = require("./public-infrastructure-firebase-adminsdk.json");
-const PDFDocument = require("pdfkit");
 const dotenv = require("dotenv");
 dotenv.config();
 const port = process.env.PORT || 3000;
