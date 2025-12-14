@@ -39,7 +39,7 @@ const verifyFirebaseToken = async (req, res, next) => {
     }
 };
 
-// 🔹 Firebase Admin helper: delete user by email
+// firebase admin helper: delete user by email
 const deleteFirebaseUserByEmail = async (email) => {
     try {
         const userRecord = await admin.auth().getUserByEmail(email);
@@ -371,9 +371,17 @@ async function run() {
             const query = {
                 status: {
                     $in: ["resolved", "closed"]
-                }
+                },
             };
-            const cursor = issuesCollection.find(query).sort({ updatedAt: -1 }).limit(6);
+
+            const options = {
+                sort: {
+                    isBoosted: -1,
+                    updatedAt: -1
+                }
+            }
+
+            const cursor = issuesCollection.find(query, options).limit(6);
             const result = await cursor.toArray();
             res.send(result);
         });
@@ -461,32 +469,37 @@ async function run() {
         });
 
         app.patch("/issues/:id/upvote", verifyFirebaseToken, async (req, res) => {
-                const id = req.params.id;
-                const upVoterEmail = req.token_email;
-                const query = { _id: new ObjectId(id) };
+            const id = req.params.id;
+            const upVoterEmail = req.token_email;
+            const query = { _id: new ObjectId(id) };
 
-                const issue = await issuesCollection.findOne(query);
-                const user = await usersCollection.findOne({ email: upVoterEmail})
+            const issue = await issuesCollection.findOne(query);
+            console.log(issue);
+            const { email, role } = await usersCollection.findOne({ email: upVoterEmail });
 
-                // cannot upvote own issue
-                if (issue.reporterEmail === email) {
-                    return res.status(400).send({ message: "You cannot upvote your own issue" });
-                }
-
-                // already upvoted
-                if (issue.upvotes && issue.upvotes.includes(email)) {
-                    return res.status(400).send({ message: "You already upvoted this issue" });
-                }
-
-                const update = {
-                    $addToSet: { upvotes: email },
-                    $inc: { upvoteCount: 1 },
-                };
-
-                const result = await issuesCollection.updateOne(query, update);
-                res.send(result);
+            // only citizen can upvote
+            if (role !== "citizen") {
+                return res.status(400).send({ message: "Only citizens can upvote on issues" });
             }
-        );
+
+            // cannot upvote own issue
+            if (issue.reporterEmail === email) {
+                return res.status(400).send({ message: "You cannot upvote your own issue" });
+            }
+
+            // already upvoted
+            if (issue.upvotes && issue.upvotes.includes(email)) {
+                return res.status(400).send({ message: "You already upvoted this issue" });
+            }
+
+            const update = {
+                $addToSet: { upvotes: email },
+                $inc: { upvoteCount: 1 },
+            };
+
+            const result = await issuesCollection.updateOne(query, update);
+            res.send(result);
+        });
 
         // citizen related api's
         app.get("/citizen/stats", verifyFirebaseToken, verifyCitizen, async (req, res) => {
