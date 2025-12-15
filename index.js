@@ -1083,6 +1083,28 @@ async function run() {
             res.send(result);
         });
 
+        app.get("/admin/admins", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+            const searchText = req.query.searchText;
+            const query = { role: "admin" };
+
+            if (searchText) {
+                query.$or = [
+                    { displayName: { $regex: searchText, $options: "i" } },
+                    { email: { $regex: searchText, $options: "i" } },
+                ];
+            }
+
+            const options = { 
+                sort: {
+                    createdAt: -1
+                }
+            };
+
+            const cursor = usersCollection.find(query, options);
+            const result = await cursor.toArray();
+            res.send(result);
+        });
+
         app.get("/admin/profile", verifyFirebaseToken, verifyAdmin, async (req, res) => {
             const email = req.query.email;
             
