@@ -369,7 +369,7 @@ async function run() {
         app.get("/issues/latest-resolved", async (req, res) => {
             const query = {
                 status: {
-                    $in: ["resolved", "closed"]
+                    $in: ["resolved"]
                 },
             };
 
