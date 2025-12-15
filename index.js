@@ -375,7 +375,6 @@ async function run() {
 
             const options = {
                 sort: {
-                    isBoosted: -1,
                     updatedAt: -1
                 }
             }
