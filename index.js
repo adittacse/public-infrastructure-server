@@ -296,7 +296,8 @@ async function run() {
                 status = "",
                 priority = "",
                 category = "",
-                location = ""
+                location = "",
+                sortBy = "newest"
             } = req.query;
 
             page = Number(page) || 1;
@@ -305,17 +306,14 @@ async function run() {
                 limit = 10;
             }
 
-            let skip = 0;
-            let useLimit = limit > 0;
+            const useLimit = limit > 0;
+            const skip = useLimit ? limit * (page - 1) : 0;
 
-            if (useLimit) {
-                skip = limit * (page - 1);
-            }
-
+            /* ---------------- QUERY ---------------- */
             const query = {};
 
             if (search) {
-                query.title = { $regex: search, $options: "i" }
+                query.title = { $regex: search, $options: "i" };
             }
 
             if (status) {
@@ -334,31 +332,48 @@ async function run() {
                 query.location = { $regex: location, $options: "i" };
             }
 
-            const options = {
-                sort: {
-                    priority: 1,
-                    upvoteCount: -1,
-                    createdAt: -1
-                }
+            /* ---------------- SORT LOGIC ---------------- */
+            let sortOption = { createdAt: -1 }; // default newest
+
+            switch (sortBy) {
+                case "oldest":
+                    sortOption = { createdAt: 1 };
+                    break;
+
+                case "upvotes":
+                    sortOption = { upvoteCount: -1, createdAt: -1 };
+                    break;
+
+                case "priority":
+                    // high first, then normal
+                    sortOption = {
+                        priority: 1,
+                        createdAt: -1
+                    };
+                    break;
+
+                case "newest":
+                default:
+                    sortOption = { createdAt: -1 };
             }
 
-            let cursorIssues = issuesCollection.find(query, options);
+            /* ---------------- FETCH ---------------- */
+            let cursor = issuesCollection.find(query).sort(sortOption);
 
             if (useLimit) {
-                cursorIssues = cursorIssues.limit(limit).skip(skip);
+                cursor = cursor.skip(skip).limit(limit);
             }
 
-            const issues = await cursorIssues.toArray();
-                
+            const issues = await cursor.toArray();
             const total = await issuesCollection.countDocuments(query);
 
             const effectiveLimit = useLimit ? limit : total;
             const last_page = useLimit ? Math.ceil(total / limit) : 1;
 
-            return res.status(200).send({
+            res.status(200).send({
                 total,
                 per_page: effectiveLimit,
-                from: useLimit ? skip + 1 : (total ? 1 : 0),
+                from: total === 0 ? 0 : skip + 1,
                 to: useLimit ? skip + issues.length : total,
                 current_page: useLimit ? page : 1,
                 last_page,
